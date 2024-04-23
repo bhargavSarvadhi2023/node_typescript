@@ -1,22 +1,52 @@
-import express, { Express } from 'express';
+import express, { Router } from 'express';
+import { END_POINTS, ERRORTYPES, RES_TYPES, ROLES } from '../constant/index';
+import { AppError } from '../utils';
+import { authRoutes } from './auth/auth.routes';
+import passport from 'passport';
+import { checkPermission } from '../middleware';
+import { userRoutes } from './user';
+import { adminRoutes } from './admin';
+import { countryRoutes } from './country';
 
-import * as apiRoutes from './users.routes';
-import * as adminRoutes from './admin.routes';
-import appError from '../utils/errorHelper';
-import { ErrorType } from '../utils/errorTypes';
-
-export function initRoutes(app: Express) {
-
-  app.use('/api/v1/user', apiRoutes.initRoutes(app, express.Router()));
-  app.use('/api/v1/admin', adminRoutes.initRoutes(app, express.Router()));
-  app.get('/', (req, res) => res.status(200).send({ message: 'Welcome to SARVADHI world!!' }));
-  app.use('*', (req, res, next) => {
-    try {
-      throw new appError('path not found',ErrorType.not_found);
-    } catch (error) {
-      next(error);
+class InvalidedRouter {
+    handleRequest(req, res, next) {
+        return next(
+            new AppError(
+                `${req.url} - ${RES_TYPES.BAD_URL}`,
+                ERRORTYPES.NOT_FOUND,
+            ),
+        );
     }
-  });
-
 }
 
+class MainRouter {
+    router: Router;
+    invalidedRouter: InvalidedRouter;
+    constructor() {
+        this.router = express.Router();
+        this.invalidedRouter = new InvalidedRouter();
+    }
+
+    setupRoutes() {
+        this.router.use(END_POINTS.AUTH, authRoutes);
+        this.router.use(END_POINTS.COUNTRY, countryRoutes);
+        this.router.use(
+            END_POINTS.USER,
+            passport.authenticate('jwt', { session: false }),
+            userRoutes,
+        );
+        this.router.use(
+            END_POINTS.ADMIN,
+            passport.authenticate('jwt', { session: false }),
+            adminRoutes,
+        );
+        this.router.all(END_POINTS.ALL, (req, res, next) =>
+            this.invalidedRouter.handleRequest(req, res, next),
+        );
+    }
+}
+
+const mainRouter = new MainRouter();
+mainRouter.setupRoutes();
+
+export default mainRouter.router;
